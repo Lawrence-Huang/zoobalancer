@@ -1,6 +1,5 @@
 package idv.lawrence.zoobalancer;
 
-
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -15,13 +14,32 @@ import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.ZooDefs.Ids;
 
-public class ZooManager{
+/**
+ * 
+ * This ZooManager is the service layer of the ZooBalancer. It contains how to
+ * initialize the Datatree in ZooKeeper, how to create persistent or ephemeral
+ * znode, and how to choose the best server for forwarding client's request.
+ *
+ */
+public class ZooManager {
 	private String projectName;
 	private String ipAddress;
 	private String zkCluster;
 	private CuratorFramework zk;
 	private InterProcessMutex mutex;
 
+	/**
+	 * This constructor checks Datatree in the ZooKeeper whether have been
+	 * created. If the Datatree doesn't be created, this constructor will create
+	 * a parent znode which name is project name and have three children znodes
+	 * which name are server, session, and lock.
+	 * 
+	 * @param projectName
+	 * @param ipAddress
+	 * @param zkCluster
+	 * @throws Exception
+	 * 
+	 */
 	public ZooManager(String projectName, String ipAddress, String zkCluster)
 			throws Exception {
 		this.projectName = projectName;
@@ -44,21 +62,30 @@ public class ZooManager{
 			zk.create().withMode(CreateMode.PERSISTENT)
 					.forPath("/" + projectName + "/session");
 		}
-		if( zk.checkExists().forPath("/"+projectName+"/lock") == null){
-			zk.create().withMode(CreateMode.PERSISTENT).forPath("/"+projectName+"/lock");
+		if (zk.checkExists().forPath("/" + projectName + "/lock") == null) {
+			zk.create().withMode(CreateMode.PERSISTENT)
+					.forPath("/" + projectName + "/lock");
 		}
-		if( zk.checkExists().forPath("/"+projectName+"/lock/"+ipAddress) == null){
-			zk.create().withMode(CreateMode.PERSISTENT).forPath("/"+projectName+"/lock/"+ipAddress);
+		if (zk.checkExists().forPath("/" + projectName + "/lock/" + ipAddress) == null) {
+			zk.create().withMode(CreateMode.PERSISTENT)
+					.forPath("/" + projectName + "/lock/" + ipAddress);
 		}
 
 		zk.create()
 				.withMode(CreateMode.EPHEMERAL)
 				.forPath("/" + projectName + "/server/" + ipAddress,
 						ByteBuffer.allocate(4).putInt(0).array());
-		
-		mutex = new InterProcessMutex(zk, "/" + projectName + "/lock/" + ipAddress);
+
+		mutex = new InterProcessMutex(zk, "/" + projectName + "/lock/"
+				+ ipAddress);
 	}
 
+	/**
+	 * This method registers session Id which belongs one of the client to
+	 * ZooKeeper.
+	 * 
+	 * @param sessionId
+	 */
 	public void registerSession(String sessionId) {
 		String sessionRecordPath = "/" + projectName + "/session/" + sessionId;
 		try {
@@ -73,6 +100,12 @@ public class ZooManager{
 		}
 	}
 
+	/**
+	 * This method unregisters session Id which belongs one of the client from
+	 * ZooKeeper
+	 * 
+	 * @param sessionId
+	 */
 	public void unregisterSession(String sessionId) {
 		String sessionRecordPath = "/" + projectName + "/session/" + sessionId;
 		try {
@@ -84,6 +117,12 @@ public class ZooManager{
 		}
 	}
 
+	/**
+	 * This method updates that this session Id belong to this tomcat now.
+	 * 
+	 * @param sessionId
+	 * @throws Exception
+	 */
 	public void updateSessionInfo(String sessionId) throws Exception {
 		String sessionRecordPath = "/" + projectName + "/session/" + sessionId;
 		if (zk.checkExists().forPath(sessionRecordPath) == null)
@@ -93,6 +132,14 @@ public class ZooManager{
 			zk.setData().forPath(sessionRecordPath, sessionId.getBytes());
 	}
 
+	/**
+	 * This method looks for which the session Id belong to. And it returns the
+	 * address of the Tomcat.
+	 * 
+	 * @param sessionId
+	 * @return
+	 * @throws Exception
+	 */
 	public String lookupSession(String sessionId) throws Exception {
 		if (sessionId == null)
 			throw new NullPointerException();
@@ -100,12 +147,24 @@ public class ZooManager{
 			return new String(zk.getData().forPath(
 					"/" + projectName + "/session/" + sessionId));
 	}
-	public int getCurrentLoad() throws Exception{
+
+	/**
+	 * This method returns the current Tomcat loading.
+	 * 
+	 * @return
+	 * @throws Exception
+	 */
+	public int getCurrentLoad() throws Exception {
 		String serverMetricPath = "/" + projectName + "/server/" + ipAddress;
-		return ByteBuffer.wrap(
-				zk.getData().forPath(serverMetricPath)).getInt();
+		return ByteBuffer.wrap(zk.getData().forPath(serverMetricPath)).getInt();
 	}
 
+	/**
+	 * This method adds the current Tomcat loading. And it demonstrates the
+	 * mutex which is provided by Apache Curator.
+	 * 
+	 * @param num
+	 */
 	public void increseLoad(int num) {
 		String serverMetricPath = "/" + projectName + "/server/" + ipAddress;
 
@@ -130,6 +189,12 @@ public class ZooManager{
 
 	}
 
+	/**
+	 * This method reduces the current Tomcat loading. And it demonstrates the
+	 * mutex which is provided by Apache Curator.
+	 * 
+	 * @param num
+	 */
 	public void decreaseLoad(int num) {
 		String serverMetricPath = "/" + projectName + "/server/" + ipAddress;
 
@@ -153,6 +218,15 @@ public class ZooManager{
 		}
 	}
 
+	/**
+	 * This method returns IP address of the lowest loading tomcat. First, it
+	 * get all server lists in the ZooKeeper. After that, this lists are sorted
+	 * by loading weight. As the result, it can get the best tomcat server which
+	 * the clinet's request should be forwarded to.
+	 * 
+	 * @return
+	 * @throws Exception
+	 */
 	public String getBestServer() throws Exception {
 
 		String serverRecordPath = "/" + projectName + "/server";

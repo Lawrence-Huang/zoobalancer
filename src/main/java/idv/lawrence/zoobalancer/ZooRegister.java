@@ -8,6 +8,7 @@ import javax.servlet.annotation.WebListener;
 
 /**
  * Application Lifecycle Listener implementation class ZKRegister
+ * It connect to ZooKeeper cluter while the Tomcat is starting.
  *
  */
 @WebListener

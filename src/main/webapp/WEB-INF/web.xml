@@ -8,6 +8,7 @@
   	<param-name>ProjectName</param-name>
   	<param-value>zoobalancer</param-value>
   </context-param>
+  <!-- ZooKeeper servers' addresses -->
   <context-param>
     <param-name>ZookeeperCluster</param-name>
     <param-value>192.168.123.170:2181,192.168.123.171:2181,192.168.123.172:2181</param-value>
